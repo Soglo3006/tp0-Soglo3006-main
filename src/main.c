@@ -52,6 +52,7 @@ error_code strlen2(const char *s) {
     return taille;
 }
 
+
 /**
  * Ex.2 :Retourne le nombre de lignes d'un fichier sans changer la position
  * courante dans le fichier.
