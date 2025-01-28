@@ -38,17 +38,16 @@ int strcmp(const char *p1, const char *p2) {
  * si l'entrée est incorrecte
  */
 error_code strlen2(const char *s) {
-    if (s == NULL){
+    if (s == NULL) {
         return ERROR;
     }
-    
+
     int taille = 0;
 
     while (*s!= '\0') {
         taille++;
         s++;
     }
-
     return taille;
 }
 
@@ -90,18 +89,20 @@ error_code readline(FILE *fp, char *out, size_t max_len) {
     }
 
     int c;
-    size_t i = 0;
+    size_t i;
 
-    // Lire caractère par caractère et l'ajouter à la chaîne jusqu'à une limite ou EOF
-    while (i < max_len - 1 && (c = fgetc(fp)) != EOF && c != '\n') {
-        out[i++] = (char)c;
+
+    for (i = 0; i < max_len - 1; i++) {
+        c = fgetc(fp);
+        if (c == EOF || c == '\n') {
+            break;
+        }
+        out[i] = (char)c;
     }
 
-    out[i] = '\0';  // Ajoute un caractère nul pour marquer la fin de la chaîne
-
-    return i;  // Retourne le nombre de caractères lus
+    out[i] = '\0';
+    return i;
 }
-
 /**
  * Ex.4: Copie un bloc mémoire vers un autre
  * @param dest la destination de la copie
@@ -111,14 +112,14 @@ error_code readline(FILE *fp, char *out, size_t max_len) {
  */
 error_code memcpy2(void *dest, const void *src, size_t len) {
     if (dest == NULL || src == NULL || len == 0) {
-        return ERROR; // Vérification des entrées
+        return ERROR;
     }
 
     byte *d = (byte *)dest;
     const byte *s = (const byte *)src;
 
     for (size_t i = 0; i < len; i++) {
-        d[i] = s[i]; // Copie byte par byte
+        d[i] = s[i];
     }
 
     return (error_code)len;
@@ -132,50 +133,44 @@ error_code memcpy2(void *dest, const void *src, size_t len) {
  */
 
 transition *parse_line(char *line, size_t len) {
-    // Vérification si la ligne est valide (longueur > 2 pour être une transition)
     if (line == NULL || len < 3) {
-        return NULL; // Ligne trop courte pour être une transition
-    }
-
-    // Allouer la mémoire pour la structure transition
-    transition *trans = (transition *)malloc(sizeof(transition));
-    if (!trans) {
-        return NULL; // Erreur d'allocation de la structure
-    }
-
-    // Allouer de la mémoire pour les états
-    trans->current_state = (char *)malloc(len + 1); // Plus 1 pour le caractère '\0'
-    trans->next_state = (char *)malloc(len + 1);
-    if (!trans->current_state || !trans->next_state) {
-        // En cas d'échec d'allocation, libérer la mémoire et retourner NULL
-        free(trans);
-        if (trans->current_state) free(trans->current_state);
-        if (trans->next_state) free(trans->next_state);
         return NULL;
     }
 
-    // Analyse de la ligne avec sscanf pour extraire les valeurs
-    int scanned = sscanf(
-        line,
-        "(%[^,],%c)->(%[^,],%c,%c)",
-        trans->current_state,   // État actuel
-        &trans->read,           // Symbole lu
-        trans->next_state,      // Prochain état
-        &trans->write,          // Symbole à écrire
-        &trans->movement        // Mouvement (R ou L)
-    );
+    transition *trans = (transition *)malloc(sizeof(transition));
+    if (!trans) {
+        return NULL;
+    }
 
-    // Vérifier si tous les champs ont été correctement analysés
-    if (scanned != 5) {
-        // En cas d'erreur, libérer la mémoire et retourner NULL
+    trans->current_state = (char *)malloc(len + 1);
+    trans->next_state = (char *)malloc(len + 1);
+    if (!trans->current_state || !trans->next_state) {
         free(trans->current_state);
         free(trans->next_state);
         free(trans);
         return NULL;
     }
 
-    return trans; // Retourner la structure de transition analysée
+    int scanned = sscanf(
+        line,
+        "(%[^,],%c)->(%[^,],%c,%c)",
+        trans->current_state,
+        &trans->read,
+        trans->next_state,
+        &trans->write,
+        &trans->movement
+    );
+
+    if (scanned != 5) {
+        free(trans->current_state);
+        free(trans->next_state);
+        free(trans);
+        return NULL;
+    }
+
+    return trans;
 }
+
 
 /**
  * Ex.6: Execute la machine de turing dont la description est fournie
@@ -184,8 +179,57 @@ transition *parse_line(char *line, size_t len) {
  * @return le code d'erreur
  */
 error_code execute(char *machine_file, char *input) {
-    return ERROR;
+    FILE *fp = fopen(machine_file, "r");
+    if (!fp) return ERROR;
+
+    char initial_state[10], accept_state[10], reject_state[10];
+    fscanf(fp, "%s\n%s\n%s\n", initial_state, accept_state, reject_state);
+
+
+    transition *transitions[100];
+    size_t transition_count = 0;
+    char line[256];
+    while (fgets(line, sizeof(line), fp)) {
+        transitions[transition_count++] = parse_line(line, strlen2(line));
+    }
+    fclose(fp);
+
+    int tape_size = strlen2(input) * 2;
+    char *tape = calloc(tape_size, sizeof(char));
+    for (int i = 0; i < strlen2(input); i++) {
+        tape[i] = input[i];
+    }
+
+    char current_state[10];
+    for (int i = 0; i < 10; i++) current_state[i] = initial_state[i];
+    int head_position = 0;
+
+    while (strcmp(current_state, accept_state) != 0 && strcmp(current_state, reject_state) != 0) {
+        transition *current_transition = NULL;
+        for (int i = 0; i < transition_count; i++) {
+            if (strcmp(transitions[i]->current_state, current_state) == 0 &&
+                transitions[i]->read == tape[head_position]) {
+                current_transition = transitions[i];
+                break;
+                }
+        }
+        if (!current_transition) {
+            for (int i = 0; i < 10; i++) current_state[i] = reject_state[i];
+            break;
+        }
+        tape[head_position] = current_transition->write;
+        for (int i = 0; i < 10; i++) current_state[i] = current_transition->next_state[i];
+        head_position += (current_transition->movement == 'R') ? 1 : -1;
+    }
+
+    int result = strcmp(current_state, accept_state) == 0 ? 1 : 0;
+    free(tape);
+    return result;
+
 }
+
+
+
 
 // ATTENTION! TOUT CE QUI EST ENTRE LES BALISES ༽つ۞﹏۞༼つ SERA ENLEVÉ! N'AJOUTEZ PAS D'AUTRES ༽つ۞﹏۞༼つ
 
@@ -195,19 +239,18 @@ error_code execute(char *machine_file, char *input) {
 
 
 
-int main() {
-// ous pouvez ajouter des tests pour les fonctions ici
-    //const char *test1 = "Booh Louha";
-    //printf("Longueur du mot: %d\n", strlen2(test1));
+int main(){
+// Vous pouvez ajouter des tests pour les fonctions ici
+
 
     //Test 1 Fini
     //Test 2 fini
     //Test 3 fini
     //Test 4 fini
 
-    // À faire Test 6
+    //Test 5 fini
 
-
+    //Test 6 fini
 
 
     return 0;
